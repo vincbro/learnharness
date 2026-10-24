@@ -17,6 +17,8 @@ import { chatGPTStream } from "./chatgpt-stream.ts";
 import type { ChatGPTDispatchLifecycle } from "./chatgpt-request-cycle.ts";
 import { nativeSubscriptionId, nativeSubscriptionModel } from "./subscription-bridge.ts";
 import { nativeSubscriptionStream } from "./subscription-stream.ts";
+import { createClaudeCodeProvider } from "./claude-code/provider.ts";
+import { streamClaudeCode } from "./claude-code/stream.ts";
 
 /** App identity is immutable and shared by Models and every native Agent.
  * Agent's default Pi attribution otherwise overrides the Models identity. */
@@ -62,6 +64,7 @@ export function piModels() {
 	if (!collection) {
 		collection = createModels({ identity: APP_IDENTITY });
 		for (const provider of builtinProviders()) collection.setProvider(provider);
+		collection.setProvider(createClaudeCodeProvider(streamClaudeCode));
 	}
 	return collection;
 }
