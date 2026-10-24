@@ -48,6 +48,7 @@ import type {
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
 import { AUTH_PROVIDER_KEYS } from "../core/auth-keys.ts";
+import { getClaudeBinary } from "../agent/claude-code/binary.ts";
 import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
 import { BACKGROUND_MODEL_ROLES, MODEL_SLOTS, type BackgroundModelRole, type ModelSlotName, type ModelsSettings } from "../core/settings.ts";
 
@@ -143,15 +144,15 @@ export function catalogProviders(): CatalogProvider[] {
 	})).concat([
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
+		{ id: CLAUDE_CODE_PROVIDER, envVar: "", keyPresent: getClaudeBinary() !== null },
 	]).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** The providers whose key is present — the picker federates exactly
  *  these (a keyless provider's models are unreachable by design; the
- *  Keys page is the discovery surface, same discipline as search), plus
- *  claude-code, which runs on the local CLI's subscription and takes no key. */
+ *  Keys page is the discovery surface, same discipline as search). */
 function keyedProviderIds(): Set<string> {
-	return new Set([...catalogProviders().filter((p) => p.keyPresent).map((p) => p.id), CLAUDE_CODE_PROVIDER]);
+	return new Set(catalogProviders().filter((p) => p.keyPresent).map((p) => p.id));
 }
 
 /** Project one catalog model to the client DTO. */
