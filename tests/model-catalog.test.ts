@@ -27,6 +27,7 @@ import { resolveSettings } from "../src/core/settings-resolution.ts";
 import { readSettings } from "../src/store/settings.ts";
 import { effectiveSettings } from "../src/server/stores.ts";
 import { providerKeyPresent } from "../src/server/keys.ts";
+import { getClaudeBinary } from "../src/agent/claude-code/binary.ts";
 
 // The model-control wave (2026-09-12): pi-ai owns the registry — these pins
 // hold our projection + validation honest against the shipped catalog, and
@@ -371,7 +372,15 @@ describe("the claude-code provider (subscription CLI, no key)", () => {
 		});
 	});
 
-	it("catalogProviders() marks claude-code absent and modelCatalog() hides it when the CLI is missing", () => {
+	/** The lookup also checks fixed system dirs (e.g. /opt/homebrew/bin) that
+	 *  PATH and HOME can't redirect, so a system-wide claude can't be hidden. */
+	const systemClaude = (() => {
+		let found: string | null = null;
+		withClaudeInstalled(false, () => (found = getClaudeBinary()));
+		return found;
+	})();
+
+	it("catalogProviders() marks claude-code absent and modelCatalog() hides it when the CLI is missing", { skip: systemClaude ? `system-wide claude at ${systemClaude}` : false }, () => {
 		withClaudeInstalled(false, () => {
 			const row = catalogProviders().find((p) => p.id === "claude-code");
 			assert.equal(row?.keyPresent, false);
