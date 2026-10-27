@@ -88,6 +88,16 @@ describe("parseQuizInput", () => {
 		assert.deepEqual(parsed.options, PROBER_QUIZ.options);
 	});
 
+	it("string-encoded options carrying LaTeX heal before the math repair (claude-code, 2026-10-27)", () => {
+		// Inside the encoded string every LaTeX backslash is JSON-escaped
+		// (`\\infty`); repairing math first collapsed those to `\infty`,
+		// an invalid JSON escape, and the dock showed the malformed note.
+		const options = [{ label: "$T<\\infty$", value: "a" }, { label: "$\\mathbb{E}[T]=\\infty$", value: "b" }];
+		const parsed = parseQuizInput({ ...PROBER_QUIZ, options: JSON.stringify(options), correctAnswer: "b" });
+		assert.ok(parsed, "the encoded LaTeX options must parse on read");
+		assert.deepEqual(parsed.options, options);
+	});
+
 	it("boundary parity under Value.Convert: a NUMERIC correctAnswer parses (live-smoke lockout fix, 2026-09-26)", () => {
 		// The live smoke's model emitted correctAnswer: 17 (number). pi's
 		// boundary runs Value.Convert before Value.Check, so the quiz posed

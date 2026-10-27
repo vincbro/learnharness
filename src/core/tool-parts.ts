@@ -99,8 +99,10 @@ export function parseQuizInput(input: unknown): QuizToolInput | undefined {
 	// record keeps RAW arguments, so the recorded `type: "\"predict\""`
 	// wobble must heal HERE too or a posed quiz renders invisible (the
 	// tool-parts law). healEncodedArguments is the same pure pass the
-	// boundary's withArgumentHeal runs.
-	const healedInput = healEncodedArguments(restoreMathEscapesDeep(input), quizDisplayInputSchema);
+	// boundary's withArgumentHeal runs. It runs BEFORE the math repair: a
+	// JSON-encoded `options` string carries its LaTeX backslashes escaped
+	// (`\\infty`), and collapsing them first breaks the JSON.
+	const healedInput = restoreMathEscapesDeep(healEncodedArguments(input, quizDisplayInputSchema));
 	const cleaned = boundaryParse<QuizToolInput>(quizDisplayInputSchema, healedInput);
 	if (!cleaned) return undefined;
 	if (quizInputProblems(cleaned).length > 0) return undefined;
@@ -114,7 +116,7 @@ export function parseQuizInput(input: unknown): QuizToolInput | undefined {
  * keying, so they parse to undefined exactly like the zod seam did).
  */
 export function parseAskInput(input: unknown): AskToolInput | undefined {
-	const cleaned = boundaryParse<AskToolInput>(askInputSchema, restoreMathEscapesDeep(input));
+	const cleaned = boundaryParse<AskToolInput>(askInputSchema, restoreMathEscapesDeep(healEncodedArguments(input, askInputSchema)));
 	if (!cleaned) return undefined;
 	if (askOptionProblems(cleaned.options ?? []).length > 0) return undefined;
 	return cleaned;
@@ -127,7 +129,7 @@ export function parseAskInput(input: unknown): AskToolInput | undefined {
  *  variants share the same fields; the teacher's nodeId is an unknown
  *  key Value.Clean strips, same as the quiz seam. */
 export function parseExplainInput(input: unknown): ExplainToolInput | undefined {
-	const cleaned = boundaryParse<ExplainToolInput>(explainDisplayInputSchema, restoreMathEscapesDeep(input));
+	const cleaned = boundaryParse<ExplainToolInput>(explainDisplayInputSchema, restoreMathEscapesDeep(healEncodedArguments(input, explainDisplayInputSchema)));
 	if (!cleaned) return undefined;
 	if (explainInputProblems(cleaned).length > 0) return undefined;
 	return cleaned;
@@ -135,7 +137,7 @@ export function parseExplainInput(input: unknown): ExplainToolInput | undefined 
 
 /** Reflect parse for DISPLAY: the prompt + optional details. */
 export function parseReflectInput(input: unknown): ReflectToolInput | undefined {
-	const cleaned = boundaryParse<ReflectToolInput>(reflectInputSchema, restoreMathEscapesDeep(input));
+	const cleaned = boundaryParse<ReflectToolInput>(reflectInputSchema, restoreMathEscapesDeep(healEncodedArguments(input, reflectInputSchema)));
 	if (!cleaned || cleaned.question.trim().length === 0) return undefined;
 	return cleaned;
 }
