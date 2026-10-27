@@ -57,6 +57,7 @@ All three platforms support in-app updates.
 - **Your keys and models.** No LearnHarness subscription or markup. You pay your providers for usage; a live cost meter shows model costs.
 - **Local storage.** Your chats, graph, settings, and API keys live on your machine. Learning records are plain files you can inspect.
 - **External services.** Models run through your configured providers. Model requests send the context needed for the task; web research and dictation also contact external services. Local storage does not mean offline processing.
+- **Claude Code sessions.** With the Claude Code provider, each lesson also runs as a Claude Code CLI session, so the CLI stores that conversation in its own session files under `~/.claude/projects/` (Claude Code deletes old sessions after about 30 days by default).
 - **Inspectable behavior.** System prompts are visible and editable. The app is open source under the AGPL-3.0 license.
 
 ## Development and support

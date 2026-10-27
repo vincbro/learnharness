@@ -261,12 +261,12 @@ async function waitForRemoval(path: string): Promise<void> {
 
 async function assertCleanedUp(call: RunCall): Promise<void> {
 	await waitForExit(call.child);
-	await waitForRemoval(call.cwd);
 	await waitForRemoval(dirname(getFlagValue(call.args, "--system-prompt-file")));
 }
 
 test("toClaudeArgs includes every isolation flag from Global Constraints", () => {
 	const input = {
+		session: { kind: "new", id: "session-1" },
 		model: "opus",
 		effort: "high",
 		systemPromptFile: "/private/system-prompt.md",
@@ -274,7 +274,7 @@ test("toClaudeArgs includes every isolation flag from Global Constraints", () =>
 		allowedTools: ["mcp__learnharness__read", "mcp__learnharness__write"],
 	} as const;
 
-	assert.deepEqual(toClaudeArgs({ ...input, allowedTools: [...input.allowedTools] }), [
+	assert.deepEqual(toClaudeArgs({ ...input, session: { ...input.session }, allowedTools: [...input.allowedTools] }), [
 		"-p",
 		"--input-format",
 		"stream-json",
@@ -288,6 +288,8 @@ test("toClaudeArgs includes every isolation flag from Global Constraints", () =>
 		"high",
 		"--system-prompt-file",
 		"/private/system-prompt.md",
+		"--system-prompt-snapshot",
+		"off",
 		"--tools",
 		"",
 		"--strict-mcp-config",
@@ -296,14 +298,19 @@ test("toClaudeArgs includes every isolation flag from Global Constraints", () =>
 		"--setting-sources",
 		"",
 		"--disable-slash-commands",
-		"--no-session-persistence",
+		"--session-id",
+		"session-1",
 		"--permission-prompts",
 		"none",
 		"--allowedTools",
 		"mcp__learnharness__read,mcp__learnharness__write",
 	]);
 
-	assert.equal(toClaudeArgs({ ...input, allowedTools: [] }).includes("--allowedTools"), false);
+	assert.equal(toClaudeArgs({ ...input, session: { ...input.session }, allowedTools: [] }).includes("--allowedTools"), false);
+
+	const resumed = toClaudeArgs({ ...input, session: { kind: "resume", id: "session-1" }, allowedTools: [] });
+	assert.equal(getFlagValue(resumed, "--resume"), "session-1");
+	assert.equal(resumed.includes("--session-id"), false);
 });
 
 test('toEffort maps low..max verbatim, minimal to "low", undefined to "medium"', () => {
@@ -454,7 +461,7 @@ test('missing binary → error "claude CLI not found"', async () => {
 	);
 
 	assert.equal(getErrorMessage(events), ClaudeCodeError.CliNotFound);
-	await waitForRemoval(cwd);
+	assert.ok(cwd.startsWith(tmpdir()));
 });
 
 test('signed-out fixture → error "not signed in"', async (t) => {
@@ -562,7 +569,7 @@ test("abort kills the process and ends with error(aborted)", async (t) => {
 	await assertCleanedUp(getOnlyCall(calls));
 });
 
-test("cwd is an empty temp dir; prompt and mcp config live in a separate private dir", async (t) => {
+test("cwd is one fixed empty temp dir; prompt and mcp config live in a separate private dir", async (t) => {
 	const { calls } = await runScenario(t, readFixtureLines("text.jsonl"));
 	const call = getOnlyCall(calls);
 
@@ -624,7 +631,7 @@ test("parseCliLine ignores non-JSON, system, rate-limit and successful result li
 	assert.equal(parseCliLine("null"), null);
 	assert.equal(parseCliLine('{"type":"system","subtype":"init"}'), null);
 	assert.equal(parseCliLine('{"type":"rate_limit_event"}'), null);
-	assert.equal(parseCliLine('{"type":"result","is_error":false,"result":"hello there"}'), null);
+	assert.deepEqual(parseCliLine('{"type":"result","is_error":false,"result":"hello there"}'), { type: "result", modelLimits: {} });
 	assert.equal(parseCliLine('{"type":"assistant","error":null,"message":{"content":[{"type":"text","text":"hello there"}]}}'), null);
 });
 
@@ -669,7 +676,7 @@ test("partial id match starts fresh and kills the old process", async (t) => {
 	await assertCleanedUp(oldCall);
 });
 
-test("user message after tool results starts fresh with unfinished calls in the replay", async (t) => {
+test("user message after tool results resumes the session with the result as an interrupted-call note", async (t) => {
 	const stdinFile = join(mkdtempSync(join(tmpdir(), "claude-code-stdin-")), "stdin.jsonl");
 	t.after(() => rmSync(dirname(stdinFile), { recursive: true, force: true }));
 
@@ -683,13 +690,16 @@ test("user message after tool results starts fresh with unfinished calls in the 
 
 	assert.equal(calls.length, 2);
 
-	const [oldCall] = calls;
-	assert.ok(oldCall);
+	const [oldCall, newCall] = calls;
+	assert.ok(oldCall && newCall);
 	await assertCleanedUp(oldCall);
+	assert.equal(getFlagValue(newCall.args, "--resume"), getFlagValue(oldCall.args, "--session-id"));
 
 	const stdin = readFileSync(stdinFile, "utf8");
-	assert.ok(stdin.includes('[tool call read] {\\"path\\":\\"a\\"}'), stdin);
+	assert.ok(stdin.includes("Your earlier read call was interrupted"), stdin);
 	assert.ok(stdin.includes("wait, explain sockets first"), stdin);
+	assert.ok(!stdin.includes("conversation_record"), stdin);
+	assert.ok(!stdin.includes(" hi"), stdin);
 });
 
 test("output while waiting for tool results kills the process", async (t) => {
@@ -759,7 +769,7 @@ test("idle timeout kills an orphaned waiting process", async (t) => {
 	await assertCleanedUp(getOnlyCall(calls));
 });
 
-test("a tool result arriving after the idle timeout starts fresh with the call and its result in the replay", async (t) => {
+test("a tool result arriving after the idle timeout resumes the session with the result as an interrupted-call note", async (t) => {
 	liveProcessIdleTimeoutMs.current = 300;
 	t.after(() => (liveProcessIdleTimeoutMs.current = LIVE_PROCESS_IDLE_TIMEOUT_MS));
 
@@ -780,11 +790,12 @@ test("a tool result arriving after the idle timeout starts fresh with the call a
 	const reply = await runTurn(streamFunction, [HI, toolMessage, toToolResult(readA, "contents of a")]);
 
 	assert.equal(getText(reply), "hello there");
-	await assertCleanedUp(getOnlyCall(fresh.calls));
+	const resumedCall = getOnlyCall(fresh.calls);
+	await assertCleanedUp(resumedCall);
+	assert.equal(getFlagValue(resumedCall.args, "--resume"), getFlagValue(waitingCall.args, "--session-id"));
 
 	const stdin = readFileSync(stdinFile, "utf8");
-	assert.ok(stdin.includes('[tool call read] {\\"path\\":\\"a\\"}'), stdin);
-	assert.ok(stdin.includes("[tool result read]"), stdin);
+	assert.ok(stdin.includes("Your earlier read call was interrupted"), stdin);
 	assert.ok(stdin.includes("contents of a"), stdin);
 });
 
@@ -824,4 +835,128 @@ test("two concurrent streams keep separate processes and results never cross", a
 	assert.equal(getText(replyTwo), "from two");
 	assert.equal(one.calls.length, 1);
 	assert.equal(two.calls.length, 1);
+});
+
+/** One fake run per spawn, in order, each recording its stdin. */
+function createSequencedRun(t: TestContext, scenarios: string[][]): { runClaude: RunClaude; calls: RunCall[]; stdins: () => string[] } {
+	const dir = mkdtempSync(join(tmpdir(), "claude-code-stdin-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+	const runs = scenarios.map((scenario, index) => createFakeRun(t, scenario, { FAKE_CLAUDE_STDIN: join(dir, `stdin-${index}.jsonl`) }));
+	const calls: RunCall[] = [];
+
+	const runClaude: RunClaude = (args, options) => {
+		const run = runs[calls.length];
+		assert.ok(run, `unexpected spawn #${calls.length + 1}`);
+
+		const child = run.runClaude(args, options);
+		const call = run.calls.at(-1);
+		assert.ok(call);
+		calls.push(call);
+		return child;
+	};
+
+	const stdins = () => calls.map((_call, index) => readFileSync(join(dir, `stdin-${index}.jsonl`), "utf8"));
+
+	return { runClaude, calls, stdins };
+}
+
+const FOLLOW_UP: Message = { role: "user", content: "and why is that?", timestamp: 0 };
+
+test("a finished message carries its CLI session in responseId, and the first run names that session", async (t) => {
+	const { runClaude, calls } = createSequencedRun(t, [readFixtureLines("text.jsonl")]);
+
+	const reply = await runTurn(createClaudeCodeStreamFunction(runClaude), [HI]);
+
+	const [call] = calls;
+	assert.ok(call);
+	const sessionId = getFlagValue(call.args, "--session-id");
+	assert.match(reply.responseId ?? "", new RegExp(`^cc1:${sessionId}:[0-9a-f]{64}$`));
+	assert.equal(call.args.includes("--resume"), false);
+});
+
+test("a typed follow-up resumes the session and sends only the new message", async (t) => {
+	const { runClaude, calls, stdins } = createSequencedRun(t, [readFixtureLines("text.jsonl"), readFixtureLines("text.jsonl")]);
+	const streamFunction = createClaudeCodeStreamFunction(runClaude);
+
+	const reply = await runTurn(streamFunction, [HI]);
+	await runTurn(streamFunction, [HI, reply, FOLLOW_UP]);
+
+	const [first, second] = calls;
+	assert.ok(first && second);
+	assert.equal(getFlagValue(second.args, "--resume"), getFlagValue(first.args, "--session-id"));
+	assert.equal(stdins()[1], `${toStreamJsonLine([{ type: "text", text: "and why is that?" }])}\n`);
+});
+
+test("an edited history starts a new session seeded with the conversation record", async (t) => {
+	const { runClaude, calls, stdins } = createSequencedRun(t, [readFixtureLines("text.jsonl"), readFixtureLines("text.jsonl")]);
+	const streamFunction = createClaudeCodeStreamFunction(runClaude);
+
+	const reply = await runTurn(streamFunction, [HI]);
+	const edited: Message = { role: "user", content: "hello instead", timestamp: 0 };
+	await runTurn(streamFunction, [edited, reply, FOLLOW_UP]);
+
+	const [first, second] = calls;
+	assert.ok(first && second);
+	assert.notEqual(getFlagValue(second.args, "--session-id"), getFlagValue(first.args, "--session-id"));
+
+	const stdin = stdins()[1] ?? "";
+	assert.ok(stdin.includes("<conversation_record>"), stdin);
+	assert.ok(stdin.includes("hello instead"), stdin);
+	assert.ok(stdin.includes("never write a tool call as text"), stdin);
+});
+
+test("a session the CLI cannot resume falls back to a new seeded session within the same turn", async (t) => {
+	const missing = [
+		JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["No conversation found"] }),
+		exitWith(1, "No conversation found with session ID"),
+	];
+	const { runClaude, calls, stdins } = createSequencedRun(t, [readFixtureLines("text.jsonl"), missing, readFixtureLines("text.jsonl")]);
+	const streamFunction = createClaudeCodeStreamFunction(runClaude);
+
+	const reply = await runTurn(streamFunction, [HI]);
+	const retried = await runTurn(streamFunction, [HI, reply, FOLLOW_UP]);
+
+	assert.equal(getText(retried), "hello there");
+	assert.equal(calls.length, 3);
+
+	const [, resumed, fresh] = calls;
+	assert.ok(resumed && fresh);
+	assert.ok(resumed.args.includes("--resume"));
+	assert.ok(fresh.args.includes("--session-id"));
+	assert.ok((stdins()[2] ?? "").includes("<conversation_record>"));
+	await assertCleanedUp(resumed);
+});
+
+test("the context window and output limit the CLI reports replace the model's defaults", async (t) => {
+	const model = getModel();
+	const saved = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
+	t.after(() => Object.assign(model, saved));
+
+	const scenario = [
+		streamEvent({ type: "message_start", message: { model: "claude-opus-test", usage: {} } }),
+		streamEvent({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
+		streamEvent({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } }),
+		streamEvent({ type: "content_block_stop", index: 0 }),
+		streamEvent({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: {} }),
+		streamEvent({ type: "message_stop" }),
+		JSON.stringify({
+			type: "result",
+			is_error: false,
+			modelUsage: {
+				"claude-haiku-side-call": { contextWindow: 1, maxOutputTokens: 1 },
+				"claude-opus-test": { contextWindow: 200_000, maxOutputTokens: 64_000 },
+			},
+		}),
+	];
+	const { runClaude, calls } = createSequencedRun(t, [scenario]);
+
+	const reply = await runTurn(createClaudeCodeStreamFunction(runClaude), [HI]);
+	const [call] = calls;
+	assert.ok(call);
+	await waitForExit(call.child);
+
+	assert.equal(reply.responseModel, "claude-opus-test");
+	assert.equal(model.contextWindow, 200_000);
+	assert.equal(model.maxTokens, 64_000);
 });

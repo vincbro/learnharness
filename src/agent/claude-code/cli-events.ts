@@ -4,8 +4,10 @@ export type CliUsage = Partial<Pick<Usage, "input" | "output" | "cacheRead" | "c
 
 export type CliBlock = { type: "text" } | { type: "thinking" } | { type: "toolUse"; id: string; name: string };
 
+export type CliModelLimits = { contextWindow: number; maxOutputTokens: number };
+
 export type CliEvent =
-	| { type: "messageStart"; usage: CliUsage }
+	| { type: "messageStart"; model?: string; usage: CliUsage }
 	| { type: "blockStart"; index: number; block: CliBlock }
 	| { type: "textDelta"; index: number; text: string }
 	| { type: "thinkingDelta"; index: number; thinking: string }
@@ -14,7 +16,8 @@ export type CliEvent =
 	| { type: "messageDelta"; stopReason: string | null; usage: CliUsage }
 	| { type: "messageStop" }
 	| { type: "assistantError"; error: string; text: string }
-	| { type: "resultError"; text: string };
+	| { type: "resultError"; text: string }
+	| { type: "result"; modelLimits: Record<string, CliModelLimits> };
 
 type RawUsage = {
 	input_tokens?: number | null;
@@ -36,7 +39,7 @@ type RawDelta = {
 type RawStreamEvent = {
 	type: string;
 	index?: number;
-	message?: { usage?: RawUsage };
+	message?: { model?: string; usage?: RawUsage };
 	content_block?: RawContentBlock;
 	delta?: RawDelta;
 	usage?: RawUsage;
@@ -51,6 +54,7 @@ type RawCliLine = {
 	result?: string;
 	subtype?: string;
 	errors?: string[];
+	modelUsage?: Record<string, { contextWindow?: unknown; maxOutputTokens?: unknown }>;
 };
 
 function toUsage(raw: RawUsage): CliUsage {
@@ -122,8 +126,11 @@ function parseBlockEvent(index: number, event: RawStreamEvent): CliEvent | null 
 
 function parseStreamEvent(event: RawStreamEvent): CliEvent | null {
 	switch (event.type) {
-		case "message_start":
-			return { type: "messageStart", usage: toUsage(event.message?.usage ?? {}) };
+		case "message_start": {
+			const model = event.message?.model;
+			const usage = toUsage(event.message?.usage ?? {});
+			return typeof model === "string" ? { type: "messageStart", model, usage } : { type: "messageStart", usage };
+		}
 
 		case "message_delta": {
 			const stopReason = event.delta?.stop_reason ?? null;
@@ -151,6 +158,21 @@ function getResultErrorText(line: RawCliLine): string {
 	return `claude CLI failed: ${line.subtype ?? "unknown error"}`;
 }
 
+function isPositiveNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function getModelLimits(line: RawCliLine): Record<string, CliModelLimits> {
+	const limits: Record<string, CliModelLimits> = {};
+
+	for (const [model, usage] of Object.entries(line.modelUsage ?? {})) {
+		const { contextWindow, maxOutputTokens } = usage;
+		if (isPositiveNumber(contextWindow) && isPositiveNumber(maxOutputTokens)) limits[model] = { contextWindow, maxOutputTokens };
+	}
+
+	return limits;
+}
+
 export function parseCliLine(text: string): CliEvent | null {
 	let parsed: unknown;
 	try {
@@ -172,8 +194,8 @@ export function parseCliLine(text: string): CliEvent | null {
 			return { type: "assistantError", error: line.error, text: getText(line) };
 
 		case "result":
-			if (line.is_error !== true) return null;
-			return { type: "resultError", text: getResultErrorText(line) };
+			if (line.is_error === true) return { type: "resultError", text: getResultErrorText(line) };
+			return { type: "result", modelLimits: getModelLimits(line) };
 
 		default:
 			return null;

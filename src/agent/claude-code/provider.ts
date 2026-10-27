@@ -12,6 +12,8 @@ const SHARED_MODEL_FIELDS = {
 	reasoning: true,
 	// The CLI has no thinking-off switch; effort low is the floor.
 	thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
+	// What the CLI reports for opus, sonnet and haiku (checked 2026-10-27); learnModelLimits
+	// replaces them with each run's reported values.
 	contextWindow: 1_000_000,
 	maxTokens: 128_000,
 } satisfies Omit<Model<Api>, "id" | "name">;
@@ -21,6 +23,17 @@ export const CLAUDE_CODE_MODELS: readonly Model<Api>[] = [
 	{ ...SHARED_MODEL_FIELDS, id: "sonnet", name: "Claude Sonnet" },
 	{ ...SHARED_MODEL_FIELDS, id: "haiku", name: "Claude Haiku" },
 ];
+
+export type ModelLimits = { contextWindow: number; maxTokens: number };
+
+/** Applies the limits the CLI reported for a model. The catalog and compaction read these same
+ *  objects, so the reported numbers replace the defaults above from the first finished turn on. */
+export function learnModelLimits(id: string, limits: ModelLimits): void {
+	const model = CLAUDE_CODE_MODELS.find((entry) => entry.id === id);
+	if (!model) return;
+
+	Object.assign(model, limits);
+}
 
 export function createClaudeCodeProvider(streamSimple: StreamFunction<Api, SimpleStreamOptions>): Provider {
 	return createProvider({

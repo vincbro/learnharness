@@ -37,7 +37,7 @@ const ASK_ID = "toolu_harness_ask";
 const ASK_INPUT = { question: "What do you already know about sockets?" };
 const ANSWER_TEXT = "Only that they carry bytes between programs";
 
-type FakeRun = { runClaude: RunClaude; children: ChildProcessWithoutNullStreams[]; stdinFiles: string[] };
+type FakeRun = { runClaude: RunClaude; children: ChildProcessWithoutNullStreams[]; stdinFiles: string[]; argsList: string[][] };
 
 function streamEvent(event: object): string {
 	return JSON.stringify({ type: "stream_event", event });
@@ -66,6 +66,7 @@ function createFakeRun(t: TestContext, scenarios: string[][]): FakeRun {
 
 	const children: ChildProcessWithoutNullStreams[] = [];
 	const stdinFiles: string[] = [];
+	const argsList: string[][] = [];
 
 	const runClaude: RunClaude = (args, options) => {
 		const scenario = scenarios[children.length];
@@ -84,10 +85,11 @@ function createFakeRun(t: TestContext, scenarios: string[][]): FakeRun {
 
 		children.push(child);
 		stdinFiles.push(stdinFile);
+		argsList.push(args);
 		return child;
 	};
 
-	return { runClaude, children, stdinFiles };
+	return { runClaude, children, stdinFiles, argsList };
 }
 
 function createClaudeCodeChat(t: TestContext): string {
@@ -168,7 +170,11 @@ test("a question answered before the idle timeout continues the waiting CLI proc
 	await waitForExit(waiting);
 });
 
-test("a question answered after the idle timeout starts a fresh CLI process that replays the question and answer", async (t) => {
+function getFlag(args: string[] | undefined, flag: string): string | undefined {
+	return args?.[args.indexOf(flag) + 1];
+}
+
+test("a question answered after the idle timeout resumes the CLI session with the answer", async (t) => {
 	liveProcessIdleTimeoutMs.current = 300;
 	t.after(() => (liveProcessIdleTimeoutMs.current = LIVE_PROCESS_IDLE_TIMEOUT_MS));
 
@@ -188,9 +194,29 @@ test("a question answered after the idle timeout starts a fresh CLI process that
 	assert.equal(fakeRun.children.length, 2);
 	assert.equal(getLastAssistantText(chatId), "hello there");
 
-	const replay = readFileSync(fakeRun.stdinFiles[1] ?? "", "utf8");
-	assert.ok(replay.includes("[tool call ask_user_question]"), replay);
-	assert.ok(replay.includes(ASK_INPUT.question), replay);
-	assert.ok(replay.includes("[tool result ask_user_question]"), replay);
-	assert.ok(replay.includes(ANSWER_TEXT), replay);
+	const [firstArgs, secondArgs] = fakeRun.argsList;
+	assert.equal(getFlag(secondArgs, "--resume"), getFlag(firstArgs, "--session-id"));
+
+	const input = readFileSync(fakeRun.stdinFiles[1] ?? "", "utf8");
+	assert.ok(input.includes("Your earlier ask_user_question call was interrupted"), input);
+	assert.ok(input.includes(ANSWER_TEXT), input);
+	assert.ok(!input.includes("teach me sockets"), input);
+});
+
+test("a typed message after a finished turn resumes the CLI session through the real chat record", async (t) => {
+	const text = readFileSync(TEXT_FIXTURE, "utf8").split("\n").filter(Boolean);
+	const fakeRun = createFakeRun(t, [text, text]);
+	const agentFactory = createAgentFactory(fakeRun);
+	const chatId = createClaudeCodeChat(t);
+
+	await runChatTurn(chatId, { type: "text", text: "teach me sockets" }, agentFactory);
+	await runChatTurn(chatId, { type: "text", text: "go on" }, agentFactory);
+
+	assert.equal(fakeRun.children.length, 2);
+	const [firstArgs, secondArgs] = fakeRun.argsList;
+	assert.equal(getFlag(secondArgs, "--resume"), getFlag(firstArgs, "--session-id"));
+
+	const input = readFileSync(fakeRun.stdinFiles[1] ?? "", "utf8");
+	assert.ok(input.includes("go on"), input);
+	assert.ok(!input.includes("teach me sockets"), input);
 });
