@@ -115,6 +115,21 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		return { heading, body };
 	}
 
+	// The repair loop (2026-10-27): a reflection on a missed check, and the
+	// teacher's free-recall verdict.
+	if (result.toolName === "reflect") {
+		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no prompt)";
+		const body = [`**Q:** ${question}`];
+		if (out?.dismissed === true) body.push("The learner skipped this reflection.");
+		else if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner reflected: ${out.text.trim()}`);
+		return { heading: "Reflection", body };
+	}
+
+	if (result.toolName === "grade" && !result.isError) {
+		const verdict = (result.details as { verdict?: unknown } | undefined)?.verdict;
+		return { heading: "Graded", body: [typeof verdict === "string" ? `The recall check was graded ${verdict}.` : "The recall check was graded."] };
+	}
+
 	if (ctx !== undefined && result.toolName === PRACTICE_PROBLEM_TOOL) {
 		const statement = ctx.calls.get(result.toolCallId)?.args?.statement;
 		return {

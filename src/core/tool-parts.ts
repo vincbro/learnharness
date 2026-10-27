@@ -29,7 +29,7 @@
 
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
-import { quizDisplayInputSchema, askInputSchema, askOptionProblems, quizInputProblems, explainInputProblems, explainDisplayInputSchema, type AskToolInput, type QuizToolInput, type ExplainToolInput } from "./question-core.ts";
+import { quizDisplayInputSchema, askInputSchema, askOptionProblems, quizInputProblems, explainInputProblems, explainDisplayInputSchema, reflectInputSchema, type AskToolInput, type QuizToolInput, type ExplainToolInput, type ReflectToolInput } from "./question-core.ts";
 import { repairMathForDisplay } from "./math-delims.ts";
 import { healEncodedArguments } from "./argument-heal.ts";
 import { probeDoneInputSchema, type ProbeDoneInput } from "./contracts/probe.ts";
@@ -130,6 +130,13 @@ export function parseExplainInput(input: unknown): ExplainToolInput | undefined 
 	const cleaned = boundaryParse<ExplainToolInput>(explainDisplayInputSchema, restoreMathEscapesDeep(input));
 	if (!cleaned) return undefined;
 	if (explainInputProblems(cleaned).length > 0) return undefined;
+	return cleaned;
+}
+
+/** Reflect parse for DISPLAY: the prompt + optional details. */
+export function parseReflectInput(input: unknown): ReflectToolInput | undefined {
+	const cleaned = boundaryParse<ReflectToolInput>(reflectInputSchema, restoreMathEscapesDeep(input));
+	if (!cleaned || cleaned.question.trim().length === 0) return undefined;
 	return cleaned;
 }
 

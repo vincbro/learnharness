@@ -391,7 +391,36 @@ export const askInputSchema = Type.Object({
 // graded, but duplicate values break the dock's value keying) runs at the
 // call boundary in execute (askOptionProblems, above).
 
+// ─── the repair tools (owner design, 2026-10-27) ─────────────────────────────
+//
+// reflect: after a wrong check, the learner explains in his own words why he
+// thinks he got it wrong. Client-answered, ungraded, free text; the card shows
+// the failed check and his answer, never the correct one. Teacher only.
+// grade: the teacher's verdict on a free-recall check, so the app knows
+// whether to reveal the committed answer. Server-side, teacher only.
+
+export const reflectInputSchema = Type.Object({
+	question: Type.String({
+		description:
+			"The reflection prompt shown to the learner, e.g. \"Why do you think you got this one wrong?\" — tailored to his " +
+			"answer if useful, but never hinting at the correct answer. ONE per turn: ask, then end your turn.",
+	}),
+	details: Type.Optional(
+		Type.String({ description: "Optional extra context or instructions shown under the prompt." }),
+	),
+});
+
+export const gradeInputSchema = Type.Object({
+	verdict: Type.Union([Type.Literal("correct"), Type.Literal("partial"), Type.Literal("incorrect")], {
+		description:
+			"Your verdict on the learner's latest free-recall check answer, graded strictly against your committed answer, " +
+			"as a bare word: correct, partial or incorrect. Only correct reveals the committed answer to him.",
+	}),
+});
+
 export type QuizToolInput = Static<typeof quizInputObject>;
+export type ReflectToolInput = Static<typeof reflectInputSchema>;
+export type GradeToolInput = Static<typeof gradeInputSchema>;
 export type AskToolInput = Static<typeof askInputSchema>;
 export type ExplainToolInput = Static<typeof explainInputObject>;
 export type ProbeExplainToolInput = Static<typeof explainInputBase>;
@@ -404,7 +433,7 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain";
+export type QuestionKind = "quiz" | "ask" | "explain" | "reflect";
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
 
@@ -450,7 +479,7 @@ export interface QuestionAnswerData {
 	dontKnow: boolean;
 	answers: OptionAnswer[];
 	other?: string; // ask: "Other" free text
-	text?: string; // ask/explain: text-mode answer
+	text?: string; // ask/explain/reflect: text-mode answer
 	/** The learner's reasoning on the QUESTION (renamed from `note`, owner
 	 *  2026-10-03 — "that's what it is"). */
 	thinking?: string;

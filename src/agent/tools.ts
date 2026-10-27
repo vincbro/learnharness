@@ -7,11 +7,14 @@ import {
 	explainInputBase,
 	explainInputObject,
 	explainInputProblems,
+	gradeInputSchema,
 	parseOptionsIfString,
 	probeQuizInputSchema,
 	quizInputObject,
 	quizInputProblems,
+	reflectInputSchema,
 } from "../core/question-core.ts";
+import { latestAnsweredCheck, repairStateLh, type CheckVerdict, type GradeDetails } from "../core/repair.ts";
 import { filterEnabledTools, type EnabledTools } from "../core/pending.ts";
 import type { JobRecord } from "../core/contracts.ts";
 import type { JobStore } from "../core/ports.ts";
@@ -390,6 +393,79 @@ export function teachQuizToolFor(ctx: Pick<PlanToolContext, "chatId" | "chatStor
 	};
 }
 
+// ─── the repair tools (owner design, 2026-10-27) ──────────────────────────────
+
+/** Grades given earlier in the same turn: the record only holds them once the
+ *  turn persists, so reflect and grade share this per-request map. */
+type TurnGrades = Map<string, GradeDetails["verdict"]>;
+
+function latestCheckWithTurnGrades(ctx: Pick<PlanToolContext, "chatId" | "chatStore">, turnGrades: TurnGrades) {
+	const check = latestAnsweredCheck(repairStateLh(ctx.chatStore.getChat(ctx.chatId)?.messages ?? []));
+	if (!check) return undefined;
+
+	const verdict: CheckVerdict = turnGrades.get(check.toolCallId) ?? check.verdict;
+	return { ...check, verdict };
+}
+
+/** Exported for tests. */
+export function reflectToolFor(
+	ctx: Pick<PlanToolContext, "chatId" | "chatStore">,
+	turnGrades: TurnGrades = new Map(),
+): AgentTool<typeof reflectInputSchema> {
+	return {
+		name: "reflect",
+		label: "reflect",
+		description:
+			"Ask the learner to explain, in his own words, why he thinks he got the latest check wrong, and pause until he " +
+			"answers. NOT graded. Only valid right after a check answered wrong (multiple choice) or graded incorrect/partial " +
+			"(free recall). His card shows that check and his answer, never the correct answer. ONE per turn: call it, then " +
+			"end your turn.",
+		parameters: reflectInputSchema,
+		executionMode: "sequential",
+		execute: async () => {
+			const check = latestCheckWithTurnGrades(ctx, turnGrades);
+			if (!check) return invalidInputResult("reflect", ["There is no answered check to reflect on."]);
+			if (check.verdict === "ungraded") {
+				return invalidInputResult("reflect", ["Grade the free-recall answer with the grade tool first."]);
+			}
+			if (check.verdict === "correct") {
+				return invalidInputResult("reflect", ["The latest check was answered correctly — reflect only follows a wrong answer."]);
+			}
+			return questionResult();
+		},
+	};
+}
+
+/** Exported for tests. */
+export function gradeToolFor(
+	ctx: Pick<PlanToolContext, "chatId" | "chatStore">,
+	turnGrades: TurnGrades = new Map(),
+): AgentTool<typeof gradeInputSchema> {
+	return {
+		name: "grade",
+		label: "grade",
+		description:
+			"Record your verdict on the learner's latest free-recall check answer: correct, partial or incorrect. Call it " +
+			"FIRST, before any reply, every time a free-recall check answer arrives. Only correct reveals your committed " +
+			"answer to him; partial and incorrect keep it hidden.",
+		parameters: gradeInputSchema,
+		executionMode: "sequential",
+		execute: async (_toolCallId, input) => {
+			const check = latestCheckWithTurnGrades(ctx, turnGrades);
+			if (!check || check.tool !== "explain") {
+				return invalidInputResult("grade", ["There is no answered free-recall check to grade."]);
+			}
+			if (check.verdict !== "ungraded") {
+				return invalidInputResult("grade", [`The latest free-recall check is already graded ${check.verdict}.`]);
+			}
+
+			turnGrades.set(check.toolCallId, input.verdict);
+			const details: GradeDetails = { gradedToolCallId: check.toolCallId, verdict: input.verdict };
+			return { content: [{ type: "text", text: `Graded ${input.verdict}.` }], details };
+		},
+	};
+}
+
 export interface TeacherToolContext extends PlanToolContext {
 	/** Job-tool wiring (sub-agent dispatch): the job store + the runner's
 	 *  spawn seam. The composition root injects both. */
@@ -441,14 +517,21 @@ export function createTeacherTools(
 	const mechanics = quizMechanics(enabled);
 	// Same widening as the prober's (see above) — the conditional spread of
 	// two differently-typed literals collapses into an unusable union type.
+	// The repair tools (owner design, 2026-10-27): reflect follows a wrong
+	// check in either mechanic; grade exists only for free recall, where the
+	// client cannot grade. They share this request's grades.
+	const turnGrades: TurnGrades = new Map();
 	const quizzing: Record<string, AgentTool<any>> =
-		mechanics === "free" ? { explain: teachExplainToolFor(ctx) } : { quiz: teachQuizToolFor(ctx) };
+		mechanics === "free"
+			? { explain: teachExplainToolFor(ctx), grade: gradeToolFor(ctx, turnGrades) }
+			: { quiz: teachQuizToolFor(ctx) };
 	// healToolRecord — same standard as the prober's registry (above).
 	return healToolRecord(
 		filterEnabledTools(
 			{
 			...quizzing,
 			ask_user_question: askUserQuestionTool,
+			reflect: reflectToolFor(ctx, turnGrades),
 			// The learner-filesystem set is always-on (user-decided 2026-09,
 			// sources v1): the teacher locates and reads learner-referenced
 			// files on its own terms — nothing auto-injects. Read-only by
