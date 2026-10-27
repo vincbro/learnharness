@@ -68,6 +68,11 @@ import {
 import { CoverageRing } from "@/components/extraction-coverage";
 import {
 	activeProblemOf,
+	checkRevealed,
+	checkVerdict,
+	latestAnsweredCheck,
+	repairStateFromParts,
+	type AnsweredCheck,
 	dismissedAnswer,
 	findPendingToolCall,
 	phaseAt3,
@@ -441,6 +446,10 @@ export function Chat({
 	}, []);
 
 	const pending = findPendingToolCall(messages);
+	// The repair loop (owner design, 2026-10-27): which checks keep their
+	// answer hidden, the free-recall grades, and what each reflection is about.
+	const repair = useMemo(() => repairStateFromParts(messages), [messages]);
+	const pendingReflectTarget = pending?.tool === "reflect" ? repair.reflectTargets.get(pending.toolCallId) ?? latestAnsweredCheck(repair) : undefined;
 	// The abort handler reads the pending question from a ref (the window
 	// listener is mount-scoped; the value it needs is render-scoped).
 	const pendingRef = useRef(pending);
@@ -1504,12 +1513,21 @@ export function Chat({
 													case "tool-probe":
 													case "tool-ask_user_question":
 													case "tool-explain":
-													case "tool-recall": {
+													case "tool-recall":
+													case "tool-reflect": {
 														// Pending/streaming questions live in the dock, not the
 														// transcript; answered ones render as graded records.
 														if (part.state === "output-available") {
+															const callId = (part as { toolCallId?: string }).toolCallId ?? "";
 															return (
-																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+																<AnsweredCard
+																	key={pi}
+																	answer={part.output as QuestionAnswerData}
+																	input={part.input}
+																	revealed={checkRevealed(repair, callId)}
+																	verdict={checkVerdict(repair, callId)}
+																	reflectTarget={repair.reflectTargets.get(callId)}
+																/>
 															);
 														}
 														return null;
@@ -1596,6 +1614,7 @@ export function Chat({
 				    fold) and NEVER overlaps the composer. */}
 				<DockOverlay
 					pending={pending}
+					reflectTarget={pendingReflectTarget}
 					practice={activeProblem}
 					compactionRunning={compacting}
 					onSubmitThinking={submitThinking}
@@ -1821,6 +1840,7 @@ export function shouldStampGeometryMute(nextH: number, prevH: number, pending: b
 
 function DockOverlay({
 	pending,
+	reflectTarget,
 	practice,
 	compactionRunning,
 	onSubmitThinking,
@@ -1843,6 +1863,8 @@ function DockOverlay({
 	queuedSteers,
 }: {
 	pending: ReturnType<typeof findPendingToolCall>;
+	/** A pending reflect's failed check (the repair loop). */
+	reflectTarget?: AnsweredCheck;
 	/** Compaction running for this chat (round 14) — the docks' submit
 	 *  affordance gate (the server's registry is the real one). */
 	compactionRunning: boolean;
@@ -2301,8 +2323,9 @@ function DockOverlay({
 					>
 							{pending ? (
 								<QuestionDock
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "reflect"}
 									toolCallId={pending.toolCallId}
+									reflectTarget={reflectTarget}
 									input={pending.input as never}
 									expanded={expanded}
 									reveal={revealPending}

@@ -6,8 +6,9 @@ import { GlyphMark } from "@/components/ui/glyph-mark";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { cn } from "@/lib/utils";
 import { MessageResponse } from "@/components/ai-elements/message";
-import type { QuestionAnswerData } from "@/src/core";
-import { parseAskInput, parseQuizInput } from "@/src/core";
+import { ReflectTargetSummary } from "@/components/question-dock";
+import type { AnsweredCheck, CheckVerdict, QuestionAnswerData } from "@/src/core";
+import { parseAskInput, parseQuizInput, parseReflectInput } from "@/src/core";
 
 /**
  * Static rendering of an answered question (tool part in `output-available`).
@@ -19,7 +20,23 @@ import { parseAskInput, parseQuizInput } from "@/src/core";
  * client — the card reveals his answer, the committed correct answer, and
  * the explanation, with NO verdict chips (owner ruling 2026-09-27).
  */
-export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; input?: unknown }) {
+export function AnsweredCard({
+	answer,
+	input,
+	revealed = true,
+	verdict,
+	reflectTarget,
+}: {
+	answer: QuestionAnswerData;
+	input?: unknown;
+	/** The repair loop (owner design, 2026-10-27): false while a wrong check's
+	 *  answer stays hidden — until a later check on the same node is right. */
+	revealed?: boolean;
+	/** Free-recall checks: the teacher's grade, once given. */
+	verdict?: CheckVerdict;
+	/** Reflections: the failed check they are about. */
+	reflectTarget?: AnsweredCheck;
+}) {
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
 	if (answer.dismissed) {
 		return (
@@ -31,8 +48,10 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 
 	const isQuiz = answer.kind === "quiz";
 	const isExplain = answer.kind === "explain";
+	const isReflect = answer.kind === "reflect";
 	const selectedIdx = new Set(answer.answers.map((a) => a.index));
-	const correctIdx = new Set(answer.correctIndices ?? []);
+	// A hidden check marks only the learner's own pick — never the key.
+	const correctIdx = new Set(revealed ? (answer.correctIndices ?? []) : []);
 	// The question's own context rides the ORIGINAL CALL, not the answer
 	// snapshot (owner, 2026-10-12): the details line — and, for ask
 	// questions, option descriptions — re-render from the persisted
@@ -40,7 +59,9 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 	// snapshot (what the model sees, compactAnswerForModel) is untouched;
 	// any parse failure or absent input renders exactly the older card.
 	const askInput = answer.kind === "ask" ? parseAskInput(input) : undefined;
-	const parsedDetails = askInput?.details ?? (answer.kind === "quiz" ? parseQuizInput(input)?.details : undefined);
+	const parsedDetails =
+		askInput?.details ??
+		(answer.kind === "quiz" ? parseQuizInput(input)?.details : answer.kind === "reflect" ? parseReflectInput(input)?.details : undefined);
 	const descByIndex = new Map((askInput?.options ?? []).map((o, i) => [i + 1, o.description]));
 
 	return (
@@ -75,6 +96,8 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 									: "Check"
 									: isExplain
 										? "Explain"
+										: isReflect
+											? "Reflection"
 											: "Question"}
 				{isQuiz &&
 					(answer.dontKnow ? (
@@ -84,7 +107,21 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 					) : (
 						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">incorrect</span>
 					))}
+				{isExplain && verdict && verdict !== "ungraded" && (
+					<span
+						data-testid="grade-chip"
+						className={cn(
+							"rounded px-1.5 py-0.5",
+							verdict === "correct" && "bg-green-500/15 text-green-500",
+							verdict === "partial" && "bg-amber-500/15 text-amber-500",
+							verdict === "incorrect" && "bg-red-500/15 text-red-500",
+						)}
+					>
+						{verdict}
+					</span>
+				)}
 			</div>
+			{isReflect && reflectTarget && <ReflectTargetSummary check={reflectTarget} />}
 			<div className="mb-3 font-medium">
 				<MessageResponse>{answer.questionText}</MessageResponse>
 			</div>
@@ -195,7 +232,13 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 			{/* px-3→removed: card p-4 + box px-3 double-inset sat the "Why" label deeper
 			    than the option box edges (owner, round 3). Sides flush with everything
 			    else; py-2 stays for vertical air. */}
-			{isQuiz && answer.explanation && (
+			{!revealed && (
+				<div data-testid="answer-hidden" className="mt-2 text-xs text-muted-foreground">
+					The answer stays hidden until you get a follow-up on this step right.
+				</div>
+			)}
+
+			{isQuiz && revealed && answer.explanation && (
 				/* The TUCKED explanation — ALL questions (owner, 2026-10-07): the
 				   verdict shows, the explanation sits collapsed behind the Why
 				   toggle — viewable, never center stage. Identical to the
@@ -222,7 +265,7 @@ export function AnsweredCard({ answer, input }: { answer: QuestionAnswerData; in
 			{/* The explain reveal (owner ruling 2026-09-27): the committed answer
 			    — one field, reasoning included — shown on submit; no verdict,
 			    the model's next reply IS the grading. */}
-			{isExplain && answer.committed && (
+			{isExplain && revealed && answer.committed && (
 				<div className="mt-3 rounded-lg bg-muted py-2 text-sm text-muted-foreground">
 					<span className="font-medium text-foreground">The answer: </span>
 					<MessageResponse className="inline [&_p]:inline [&_p]:m-0">{answer.committed}</MessageResponse>

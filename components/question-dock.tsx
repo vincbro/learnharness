@@ -21,9 +21,11 @@ import {
 	parseAskInput,
 	parseQuizInput,
 	parseExplainInput,
+	parseReflectInput,
 	toggleOption,
 	toggleOther,
 	type AnswerRequest,
+	type AnsweredCheck,
 	type AskToolInput,
 	type DockSelection,
 	type ExplainToolInput,
@@ -31,6 +33,7 @@ import {
 	type QuestionData,
 	type QuestionMode,
 	type QuizToolInput,
+	type ReflectToolInput,
 	type SelectMode,
 	type Phase3,
 } from "@/src/core";
@@ -57,9 +60,12 @@ import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "reflect";
 	toolCallId: string;
-	input: QuizToolInput | AskToolInput | ExplainToolInput;
+	input: QuizToolInput | AskToolInput | ExplainToolInput | ReflectToolInput;
+	/** reflect only: the failed check it asks about (its question and his
+	 *  answer — never the correct one). */
+	reflectTarget?: AnsweredCheck;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
 	expanded: boolean;
 	/**
@@ -104,6 +110,7 @@ export function QuestionDock({
 	phase = "probe",
 	dictationClaim = true,
 	compactionRunning = false,
+	reflectTarget,
 }: QuestionDockProps) {
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
@@ -122,7 +129,13 @@ export function QuestionDock({
 	// anything that slips through renders the quiet fallback, never a
 	// crash on `.map` over model-authored bytes.
 	const parsed =
-		canonical === "quiz" ? parseQuizInput(input) : canonical === "explain" ? parseExplainInput(input) : parseAskInput(input);
+		canonical === "quiz"
+			? parseQuizInput(input)
+			: canonical === "explain"
+				? parseExplainInput(input)
+				: canonical === "reflect"
+					? parseReflectInput(input)
+					: parseAskInput(input);
 	if (!parsed) {
 		return (
 			<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
@@ -140,10 +153,12 @@ export function QuestionDock({
 					variant={reveal ? "reveal" : "collapsed"}
 					toolLabel={toolLabel}
 					label={
-						(canonical === "quiz" || canonical === "explain") &&
-						normalizeQuizType((parsed as { type?: unknown }).type) === "predict"
-							? "Prediction"
-							: undefined
+						canonical === "reflect"
+							? "Reflection"
+							: (canonical === "quiz" || canonical === "explain") &&
+								  normalizeQuizType((parsed as { type?: unknown }).type) === "predict"
+								? "Prediction"
+								: undefined
 					}
 				/>
 			)}
@@ -158,9 +173,35 @@ export function QuestionDock({
 					onEscape={onEscape}
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
+					reflectTarget={reflectTarget}
 				/>
 			</div>
 		</>
+	);
+}
+
+/** The failed check a reflection is about: its question and the learner's
+ *  own answer. The correct answer is deliberately absent — he works toward
+ *  it with the teacher. */
+export function ReflectTargetSummary({ check }: { check: AnsweredCheck }) {
+	const { answer } = check;
+	const picked = answer.dontKnow
+		? "I don't know"
+		: answer.answers.length > 0
+			? answer.answers.map((option) => option.label).join(", ")
+			: answer.text;
+
+	return (
+		<div data-testid="reflect-target" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm">
+			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">The check you missed</div>
+			<MessageResponse>{answer.questionText}</MessageResponse>
+			{picked && (
+				<div className="mt-1.5 text-muted-foreground">
+					<span className="font-medium">Your answer: </span>
+					<MessageResponse className="inline [&_p]:inline [&_p]:m-0">{picked}</MessageResponse>
+				</div>
+			)}
+		</div>
 	);
 }
 
@@ -189,7 +230,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain";
+	toolName: "quiz" | "ask_user_question" | "explain" | "reflect";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";
@@ -232,7 +273,7 @@ export function QuestionDockBar({
 			<span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				{label ??
 							toolLabel ??
-							(toolName === "quiz" ? "Check" : toolName === "explain" ? "Explain" : "Question")}
+							(toolName === "quiz" ? "Check" : toolName === "explain" ? "Explain" : toolName === "reflect" ? "Reflection" : "Question")}
 			</span>
 			<span className="min-w-0 flex-1 truncate text-muted-foreground">{teaserText(question)}</span>
 			<span className="flex shrink-0 items-center gap-1 text-xs font-medium">
@@ -253,6 +294,7 @@ function QuestionDockForm({
 	onEscape,
 	dictationClaim = true,
 	compactionRunning = false,
+	reflectTarget,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
 
@@ -556,9 +598,12 @@ function QuestionDockForm({
 									: "Check"
 									: kind === "explain"
 										? "Explain"
+										: kind === "reflect"
+											? "Reflection"
 											: "Question"}
 					{qd.mode === "multi-select" && " · select all that apply"}
 				</div>
+				{reflectTarget && <ReflectTargetSummary check={reflectTarget} />}
 				<div className="mb-3 font-medium">
 					<MessageResponse>{qd.question}</MessageResponse>
 				</div>
@@ -828,7 +873,7 @@ function QuestionDockForm({
 					className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 				>
 					<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						{qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
+						{kind === "reflect" ? "Your reflection" : qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
 					</div>
 					{qd.mode === "text" ? (
 						<textarea
@@ -854,7 +899,7 @@ function QuestionDockForm({
 									submit();
 								}
 							}}
-							placeholder="Type your answer…"
+							placeholder={kind === "reflect" ? "What were you thinking, and where might it have gone wrong?" : "Type your answer…"}
 							rows={1}
 							className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 						/>

@@ -775,3 +775,76 @@ describe("question context renders as markdown everywhere (owner, 2026-10-12)", 
 		assert.ok(!html.includes("lh-prose block text-xs"), "no description slot without an ask input");
 	});
 });
+
+describe("the repair loop cards (owner design, 2026-10-27)", () => {
+	const wrongCheck = () => ({ ...buildAnswer({ ...quizQD(), questionType: "check" }, { values: ["Venus"] }), questionType: "check" as const });
+
+	it("a hidden wrong check marks only the learner's pick: no key, no explanation", () => {
+		const html = renderToStaticMarkup(<AnsweredCard answer={wrongCheck()} revealed={false} />);
+		assert.match(html, /incorrect/);
+		assert.ok(html.includes('data-mark="x"'), "his pick is marked wrong");
+		assert.ok(!html.includes('data-mark="check"'), "the correct option is not marked");
+		assert.ok(!html.includes("tucked-explanation"), "no Why toggle");
+		assert.ok(html.includes('data-testid="answer-hidden"'));
+	});
+
+	it("an unlocked wrong check shows the key and the Why toggle again", () => {
+		const html = renderToStaticMarkup(<AnsweredCard answer={wrongCheck()} revealed={true} />);
+		assert.ok(html.includes('data-mark="check"'));
+		assert.ok(html.includes("tucked-explanation"));
+		assert.ok(!html.includes('data-testid="answer-hidden"'));
+	});
+
+	it("a free-recall check shows its grade chip and hides the commitment until revealed", () => {
+		const answer = buildAnswer(
+			{ id: "e1", kind: "explain", question: "Why?", mode: "text", options: [], committedAnswer: "Because of gravity.", createdAt: "" },
+			{ text: "magnets" },
+		);
+		const hidden = renderToStaticMarkup(<AnsweredCard answer={answer} revealed={false} verdict="partial" />);
+		assert.match(hidden, /data-testid="grade-chip"[^>]*>partial</);
+		assert.ok(!hidden.includes("Because of gravity."));
+
+		const shown = renderToStaticMarkup(<AnsweredCard answer={answer} revealed={true} verdict="correct" />);
+		assert.ok(shown.includes("Because of gravity."));
+	});
+
+	const target = {
+		toolCallId: "c1",
+		tool: "quiz" as const,
+		nodeId: "planets",
+		answer: wrongCheck(),
+		verdict: "incorrect" as const,
+	};
+
+	it("a reflection card shows the missed check and his answer, never the correct one", () => {
+		const answer = buildAnswer(
+			{ id: "r1", kind: "reflect", question: "Why do you think you got this wrong?", mode: "text", options: [], createdAt: "" },
+			{ text: "I mixed up closest and hottest" },
+		);
+		const html = renderToStaticMarkup(<AnsweredCard answer={answer} reflectTarget={target} />);
+		assert.ok(html.includes("Reflection"));
+		assert.ok(html.includes('data-testid="reflect-target"'));
+		assert.ok(html.includes("Venus"), "his answer");
+		assert.ok(!html.includes("innermost"), "never the explanation");
+		assert.ok(html.includes("I mixed up closest and hottest"));
+	});
+
+	it("a pending reflect opens with the missed check and a reflection field", () => {
+		const html = renderToStaticMarkup(
+			<QuestionDock
+				toolName="reflect"
+				toolCallId="r1"
+				input={{ question: "Why do you think you got this wrong?" }}
+				reflectTarget={target}
+				expanded={true}
+				onExpand={() => {}}
+				onSubmit={() => {}}
+				phase="teach"
+			/>,
+		);
+		assert.ok(html.includes("Reflection"));
+		assert.ok(html.includes('data-testid="reflect-target"'));
+		assert.ok(html.includes("Your reflection"));
+		assert.ok(!html.includes("innermost"));
+	});
+});
