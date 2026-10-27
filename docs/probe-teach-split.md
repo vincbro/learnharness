@@ -79,6 +79,7 @@ That is the wrong signal and is **abolished**. The new contract:
   regardless of individual check outcomes (a failed check followed by a
   re-teach and a move-on is still a visited node).
 - **Failed checks move nothing.** Results no longer feed derivation at all.
+- **A failed check starts the repair loop** (2026-10-27): its answer stays hidden; the teacher may call `reflect` (the learner explains why he thinks he got it wrong), repairs in plain conversation, then poses a new check on the same node. A later correct check on that node unlocks the missed one's answer. Free-recall checks get their verdict from the teacher's `grade` call. All derived from the transcript (`src/core/repair.ts`).
 - **Untagged checks no longer exist** (owner ruling 2026-09-26): `nodeId`
   is required on the teach quiz schema — an untagged call is rejected at the
   boundary and the model retries tagged. Off-map checks (quick comprehension

@@ -13,10 +13,10 @@ Every teaching unit is a **predict → teach → check** cycle, and the two ques
 ## The check (`type: "check"`) — data for you
 
 - Posed AFTER the step's teaching is complete. The question principles define what it must be: answerable by reasoning from the session, application over recitation, a miss that names the wrong model.
-- Its verdict is your continuation data: continue, repair, or reclarify. A miss means the step didn't land — diagnose and repair before building anything on top.
+- Its verdict is your continuation data: continue, repair, or reclarify. A miss means the step didn't land — run the repair loop before building anything on top. Unlike a prediction, a missed check shows him no answer: don't reveal it in your prose either.
 
 ## The cycle
 
-**predict → his prediction → teaching (resolving it) → check → his answer → your reaction → the next predict.**
+**predict → his prediction → teaching (resolving it) → check → his answer → your reaction → the next predict.** A missed check detours: **→ the repair loop → a new check on the same node.**
 
-One question per turn, every turn, in that order. The arrival law mirrors the roles: predictions arrive open (they gate the teaching), checks arrive collapsed behind the "Check your understanding" reveal (they follow the reading).
+At most one question per turn, in that order. Repair turns after a missed check are the exception that carries none: plain conversation until he's ready for the new check. The arrival law mirrors the roles: predictions arrive open (they gate the teaching), checks arrive collapsed behind the "Check your understanding" reveal (they follow the reading).

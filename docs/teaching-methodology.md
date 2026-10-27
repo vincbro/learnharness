@@ -85,6 +85,8 @@ Every reasoning step ends with a check: a graded question verifying that the ste
 
 The cadence also shapes the session's rhythm: each check pauses the lesson for the learner's answer, so teaching advances in a rhythm of step → check → repair-or-continue. *(Locked decision, 2026-09-24: one check per reasoning step. If the rhythm proves unpleasant in practice, revisit — but the default is every step.)*
 
+**Repair is a conversation, not another question** *(2026-10-27)*. A missed check hides its answer. When the learner's thinking shows a misaligned model, the teacher asks him to reflect on why he got it wrong, then guides him, with hints that grow more direct, until he derives the answer himself. The answer is stated outright only if he asks for it. The repair runs as free back-and-forth with no questions in between. When he says to continue, or his own words show the model is repaired, a new check on the same step verifies it, and only a correct answer there reveals the missed one. The explanation he builds himself, against his own wrong model, is the one that holds (Section 5: strengthen the weak spot before continuing).
+
 ## 10. What this demands of the implementation
 
 Criteria the theory establishes for the system (not the spec — the spec follows the theory):
