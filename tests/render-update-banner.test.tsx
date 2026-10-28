@@ -79,4 +79,39 @@ describe("update banner (Wave C)", () => {
 		root.unmount();
 		host.remove();
 	});
+
+	it("shows Download for a notify-only available push, and Download opens the releases page", async () => {
+		let pushed: ((s: { status: string; version: string | null }) => void) | null = null;
+		let opened = 0;
+		let installed = 0;
+		(window as { lh?: unknown }).lh = {
+			onUpdateStatus: (cb: (s: { status: string; version: string | null }) => void) => {
+				pushed = cb;
+				return () => {};
+			},
+			installUpdate: () => {
+				installed += 1;
+			},
+			openReleases: () => {
+				opened += 1;
+			},
+		};
+		const host = document.createElement("div");
+		document.body.appendChild(host);
+		const root = ReactDOMClient.createRoot(host);
+		flushSync(() => root.render(<UpdateBanner />));
+
+		await new Promise((r) => setTimeout(r, 0));
+		flushSync(() => pushed?.({ status: "available", version: "1.0.12" }));
+		assert.ok(host.innerHTML.includes("1.0.12 is available"), "the available version renders");
+		assert.ok(host.innerHTML.includes("Download"), "the download affordance renders");
+
+		const button = host.querySelector<HTMLButtonElement>("[data-testid='update-banner'] button");
+		assert.ok(button, "download button exists");
+		button!.click();
+		assert.equal(opened, 1, "Download opens the releases page");
+		assert.equal(installed, 0, "Download never asks for a quit-and-install");
+		root.unmount();
+		host.remove();
+	});
 });

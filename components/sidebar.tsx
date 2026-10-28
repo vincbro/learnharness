@@ -69,6 +69,8 @@ declare global {
 			/** Auto-update channel (Wave C, 2026-10-10): "lh:update-status" pushes once a staged update exists. */
 			onUpdateStatus?: (cb: (status: { status: string; version: string | null }) => void) => () => void;
 			installUpdate?: () => void;
+			/** Notify-only builds (unsigned macOS fork releases): opens the release page to download the update by hand. */
+			openReleases?: () => void;
 		};
 	}
 }

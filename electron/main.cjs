@@ -433,9 +433,18 @@ const ZOOM_LADDER = [0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
  * banner asks for an immediate restart via "lh:update-install"; we kill
  * the child server FIRST — deterministic ordering: the server lives
  * inside the .app bundle Squirrel is about to replace (extraResources),
- * and before-quit alone would race the swap. */
+ * and before-quit alone would race the swap.
+ *
+ * Notify mode (fork releases, owner 2026-10-28): unsigned macOS builds
+ * can't self-update (Squirrel.Mac rejects an update whose signature
+ * doesn't match the running app's, and ad-hoc signatures never match).
+ * The fork release workflow bakes lhUpdateMode: "notify" + lhReleasesUrl
+ * into the packaged package.json; the updater then only CHECKS, and the
+ * banner links to the release page for a manual install. */
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let autoUpdater = null; // electron-updater's, packaged builds only
+const appMetadata = require("../package.json");
+const notifyOnlyUpdates = appMetadata.lhUpdateMode === "notify";
 
 function broadcastUpdateStatus(status) {
 	for (const win of BrowserWindow.getAllWindows()) {
@@ -490,8 +499,8 @@ function setupAutoUpdater() {
 		autoUpdater.setFeedURL({ provider: "generic", url: feed });
 		log(`auto-update: LH_UPDATE_FEED override → ${feed}`);
 	}
-	autoUpdater.autoDownload = true;
-	autoUpdater.autoInstallOnAppQuit = true;
+	autoUpdater.autoDownload = !notifyOnlyUpdates;
+	autoUpdater.autoInstallOnAppQuit = !notifyOnlyUpdates;
 	// Route every updater log line through the shell's own log (userData/
 	// logs/main.log) — feed failures must be diagnosable after the fact.
 	autoUpdater.logger = {
@@ -500,6 +509,12 @@ function setupAutoUpdater() {
 		debug: (m) => {}, // too chatty for the persistent log
 		error: (m) => log(`updater error: ${m}`),
 	};
+	if (notifyOnlyUpdates) {
+		autoUpdater.on("update-available", (info) => {
+			log(`update available: ${info?.version} — notify-only banner shown`);
+			broadcastUpdateStatus({ status: "available", version: info?.version ?? null });
+		});
+	}
 	autoUpdater.on("update-downloaded", (info) => {
 		log(`update downloaded: ${info?.version} — banner shown`);
 		broadcastUpdateStatus({ status: "downloaded", version: info?.version ?? null });
@@ -654,6 +669,10 @@ async function main() {
 	// are log lines — this can never block boot.
 	setupAutoUpdater();
 	ipcMain.on("lh:update-install", () => installUpdateNow());
+	// The URL is baked at build time; the renderer never supplies one.
+	ipcMain.on("lh:update-open-releases", () => {
+		if (typeof appMetadata.lhReleasesUrl === "string") void shell.openExternal(appMetadata.lhReleasesUrl);
+	});
 
 	// Sidebar-at-narrow-window (owner, 2026-09-17): the renderer auto-closes
 	// the sidebar below SIDEBAR_AUTOCLOSE (928px); opening it again at that

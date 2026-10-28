@@ -71,4 +71,5 @@ contextBridge.exposeInMainWorld("lh", {
 		return () => ipcRenderer.removeListener("lh:update-status", listener);
 	},
 	installUpdate: () => ipcRenderer.send("lh:update-install"),
+	openReleases: () => ipcRenderer.send("lh:update-open-releases"),
 });
