@@ -27,6 +27,7 @@ import { parseAgyLine } from "../src/agent/cli-agents/antigravity/events.ts";
 import { toAntigravityModel } from "../src/agent/cli-agents/antigravity/provider.ts";
 import { hashMessages, hashPrompt, toResponseId } from "../src/agent/cli-agents/antigravity/session.ts";
 import { createAntigravityStreamFunction, toAgyArgs, toolSettleMs, type RunAgy } from "../src/agent/cli-agents/antigravity/stream.ts";
+import { toAgentPrompt } from "../src/agent/cli-agents/antigravity/workspace.ts";
 
 const FAKE_AGY = fileURLToPath(new URL("./fixtures/antigravity/fake-agy.mjs", import.meta.url));
 const FIXTURES = fileURLToPath(new URL("./fixtures/antigravity/", import.meta.url));
@@ -198,12 +199,14 @@ test("streams text, stamps the conversation and prompt, and runs in a private wo
 	assert.deepEqual(message.content, [{ type: "text", text: "Hello" }]);
 	assert.deepEqual([message.usage.input, message.usage.output, message.usage.cacheRead], [100, 7, 20]);
 	const prefix = normalizeContext({ systemPrompt: PROMPT, messages, tools: [QUIZ_TOOL] }).messages;
-	assert.equal(message.responseId, toResponseId({ sessionId: "conv-1", prefixHash: hashMessages([...prefix, message]), promptHash: hashPrompt(PROMPT) }));
+	assert.equal(message.responseId, toResponseId({ sessionId: "conv-1", prefixHash: hashMessages([...prefix, message]), promptHash: hashPrompt(toAgentPrompt(PROMPT, [QUIZ_TOOL])) }));
 
 	const [call] = calls;
 	assert.ok(call);
 	assert.equal(readStdinText(call.stdinFile), "hi");
-	assert.match(call.agentFile, /^---\nname: learnharness\n[\s\S]*tools: \[\]\n[\s\S]*---\nYou are a tutor\.\n$/);
+	assert.match(call.agentFile, /^---\nname: learnharness\n[\s\S]*tools: \[\]\n[\s\S]*---\nYou are a tutor\.\n\n# Tools\n/);
+	assert.ok(call.agentFile.includes('Call these tools with call_mcp_tool, ServerName "learnharness"'));
+	assert.ok(call.agentFile.includes(`## quiz\n\nAsk a quiz question\n\n\`\`\`json\n${JSON.stringify(QUIZ_TOOL.parameters)}\n\`\`\``));
 	const server = (JSON.parse(call.mcpConfig) as { mcpServers: Record<string, { serverUrl: string; headers: { Authorization: string }; timeoutSeconds: number }> }).mcpServers.learnharness;
 	assert.ok(server);
 	assert.match(server.serverUrl, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
@@ -250,6 +253,16 @@ test("a follow-up resumes the stamped conversation and sends only the new input"
 	assert.ok(call);
 	assert.equal(call.args[call.args.indexOf("--conversation") + 1], "conv-7");
 	assert.equal(readStdinText(call.stdinFile), "and now?");
+});
+
+test("a resumed turn whose tools changed starts a new conversation too", async (t) => {
+	const { runAgy, calls } = createFakeRun(t, [{ lines: [init("conv-4"), response(1, "fresh"), result()], conversation: "conv-4" }]);
+	const earlier = [user("hi")];
+	const messages = [...earlier, stamped(earlier, "hello", "conv-7"), user("and now?")];
+
+	await collect(createAntigravityStreamFunction(runAgy)(MODEL, normalizeContext({ systemPrompt: PROMPT, messages, tools: [QUIZ_TOOL] }), {}));
+
+	assert.ok(!calls[0]?.args.includes("--conversation"));
 });
 
 test("a changed system prompt starts a new conversation with a replay", async (t) => {

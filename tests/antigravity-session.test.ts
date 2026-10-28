@@ -50,7 +50,7 @@ test("an unchanged transcript and prompt resume with only the new input", () => 
 test("a changed system prompt starts fresh, since agy keeps a conversation's first prompt", () => {
 	const plan = planSession([HI, stampedReply("prober"), { role: "user", content: "why?", timestamp: 0 }], "teacher");
 
-	assert.deepEqual(plan, { kind: "fresh", reason: "system prompt changed since the conversation started" });
+	assert.deepEqual(plan, { kind: "fresh", reason: "system prompt or tools changed since the conversation started" });
 });
 
 test("finds agy on PATH, then in known dirs; on Windows only on PATH", () => {

@@ -25,7 +25,7 @@ import { AntigravityError } from "./constants.ts";
 import { parseAgyLine, type AgyEvent, type AgyUsage } from "./events.ts";
 import { hashMessages, hashPrompt, planSession, toResponseId } from "./session.ts";
 import { toAgyInput, toResumeText, toStdinLine } from "./transcript.ts";
-import { AGENT_NAME, createWorkspace, removeWorkspace } from "./workspace.ts";
+import { AGENT_NAME, createWorkspace, removeWorkspace, toAgentPrompt } from "./workspace.ts";
 
 type RunAgyOptions = { cwd: string; env: NodeJS.ProcessEnv };
 
@@ -481,20 +481,21 @@ async function startProcess(
 	forceFresh = false,
 ): Promise<void> {
 	const input = toAgyInput(context.messages);
-	const plan = forceFresh ? { kind: "fresh" as const, reason: "resume failed" } : planSession(context.messages, input.systemPrompt);
+	const agentPrompt = toAgentPrompt(input.systemPrompt, input.tools);
+	const plan = forceFresh ? { kind: "fresh" as const, reason: "resume failed" } : planSession(context.messages, agentPrompt);
 	if (plan.kind === "fresh" && context.messages.some((message) => message.role === "assistant")) {
 		console.info("agy CLI starting a new conversation with a replay:", plan.reason);
 	}
 
 	const conversationId = plan.kind === "resume" ? plan.conversationId : undefined;
 	// A resumed conversation keeps its first prompt, which planSession checked is this one.
-	turn.promptHash = hashPrompt(input.systemPrompt);
+	turn.promptHash = hashPrompt(agentPrompt);
 	const text = plan.kind === "resume" ? toResumeText(plan.input) : input.text;
 
 	const bridge = await createMcpBridge(input.tools);
 	let workspace: string;
 	try {
-		workspace = await createWorkspace(input.systemPrompt, bridge);
+		workspace = await createWorkspace(agentPrompt, bridge);
 	} catch (error) {
 		await bridge.close();
 		throw error;

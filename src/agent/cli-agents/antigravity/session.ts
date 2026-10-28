@@ -9,16 +9,17 @@ export { hashMessages };
 
 const STAMP_PREFIX = "ag1";
 
-/** agy fixes a conversation's system prompt when it is created, so the stamp also records it: a
- *  changed prompt (e.g. the prober→teacher switch) needs a new conversation to take effect. */
+/** agy fixes a conversation's agent prompt (system prompt plus tool schemas) when it is created,
+ *  so the stamp also records it: a changed prompt or tool set (e.g. the prober→teacher switch)
+ *  needs a new conversation to take effect. */
 export type AgyStamp = SessionStamp & { promptHash: string };
 
 export type AgySessionPlan =
 	| { kind: "resume"; conversationId: string; input: Message[] }
 	| { kind: "fresh"; reason: string };
 
-export function hashPrompt(systemPrompt: string): string {
-	return createHash("sha256").update(systemPrompt).digest("hex");
+export function hashPrompt(agentPrompt: string): string {
+	return createHash("sha256").update(agentPrompt).digest("hex");
 }
 
 export function toResponseId(stamp: AgyStamp): string {
@@ -32,12 +33,12 @@ export function parseResponseId(responseId: string | undefined): AgyStamp | null
 	return { sessionId, prefixHash, promptHash };
 }
 
-export function planSession(messages: Message[], systemPrompt: string): AgySessionPlan {
+export function planSession(messages: Message[], agentPrompt: string): AgySessionPlan {
 	const plan = planResume(messages, ANTIGRAVITY_PROVIDER, parseResponseId);
 	if (plan.kind === "fresh") return plan;
 
-	if (plan.stamp.promptHash !== hashPrompt(systemPrompt)) {
-		return { kind: "fresh", reason: "system prompt changed since the conversation started" };
+	if (plan.stamp.promptHash !== hashPrompt(agentPrompt)) {
+		return { kind: "fresh", reason: "system prompt or tools changed since the conversation started" };
 	}
 
 	return { kind: "resume", conversationId: plan.stamp.sessionId, input: plan.input };
