@@ -22,8 +22,9 @@ const SHARED_MODEL_FIELDS = {
 } satisfies Omit<Model<Api>, "id" | "name">;
 
 /** The connected account's models. Filled from the saved connection and replaced in place on
- *  connect and refresh: the provider reads this array on every lookup. */
-export const ANTIGRAVITY_MODELS: Model<Api>[] = [];
+ *  connect and refresh: the provider reads this array on every lookup. Anchored on globalThis
+ *  (the chatgpt-bridge idiom) so every route bundle's copy of this module shares one list. */
+export const ANTIGRAVITY_MODELS: Model<Api>[] = ((globalThis as Record<symbol, Model<Api>[] | undefined>)[Symbol.for("learnharness.antigravityModels")] ??= []);
 
 export function toAntigravityModel(entry: AntigravityModelEntry): Model<Api> {
 	return { ...SHARED_MODEL_FIELDS, id: entry.id, name: entry.name };

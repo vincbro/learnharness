@@ -48,8 +48,7 @@ import type {
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
 import { AUTH_PROVIDER_KEYS } from "../core/auth-keys.ts";
-import { getClaudeBinary } from "../agent/claude-code/binary.ts";
-import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
+import { CLI_PROVIDER_IDS, cliConnected } from "./cli-connections.ts";
 import { BACKGROUND_MODEL_ROLES, MODEL_SLOTS, type BackgroundModelRole, type ModelSlotName, type ModelsSettings } from "../core/settings.ts";
 
 /** The picker's client-safe model entry (contract: core/contracts/models.ts). */
@@ -144,7 +143,8 @@ export function catalogProviders(): CatalogProvider[] {
 	})).concat([
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
-		{ id: CLAUDE_CODE_PROVIDER, envVar: "", keyPresent: getClaudeBinary() !== null },
+		// Subscription CLIs (Claude Code, Antigravity): configured once connected on the Keys page.
+		...CLI_PROVIDER_IDS.map((id) => ({ id, envVar: "", keyPresent: cliConnected(id) })),
 	]).sort((a, b) => a.id.localeCompare(b.id));
 }
 

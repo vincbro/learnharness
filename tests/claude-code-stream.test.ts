@@ -33,9 +33,12 @@ import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import { parseCliLine } from "../src/agent/claude-code/cli-events.ts";
 import { ClaudeCodeError } from "../src/agent/claude-code/constants.ts";
 import { LIVE_PROCESS_IDLE_TIMEOUT_MS, liveProcessIdleTimeoutMs } from "../src/agent/claude-code/live-processes.ts";
-import { CLAUDE_CODE_MODELS } from "../src/agent/claude-code/provider.ts";
+import { CLAUDE_CODE_MODELS, setClaudeCodeModels } from "../src/agent/claude-code/provider.ts";
 import { createClaudeCodeStreamFunction, toClaudeArgs, toEffort, type RunClaude } from "../src/agent/claude-code/stream.ts";
 import { toStreamJsonLine } from "../src/agent/claude-code/transcript.ts";
+
+// The connected account's models, as Connect would set them.
+setClaudeCodeModels([{ id: "opus", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] }]);
 
 const FAKE_CLAUDE = fileURLToPath(new URL("./fixtures/claude-code/fake-claude.mjs", import.meta.url));
 const FIXTURES = fileURLToPath(new URL("./fixtures/claude-code/", import.meta.url));

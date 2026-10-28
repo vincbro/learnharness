@@ -80,7 +80,8 @@ export type ClaudeSessionArgs = { kind: "new"; id: string } | { kind: "resume"; 
 type ClaudeArgsInput = {
 	session: ClaudeSessionArgs;
 	model: string;
-	effort: AnthropicEffort;
+	/** Left out for models that take no effort level. */
+	effort?: AnthropicEffort;
 	systemPromptFile: string;
 	mcpConfigFile: string;
 	allowedTools: string[];
@@ -97,8 +98,7 @@ export function toClaudeArgs(input: ClaudeArgsInput): string[] {
 		"--include-partial-messages",
 		"--model",
 		input.model,
-		"--effort",
-		input.effort,
+		...(input.effort ? ["--effort", input.effort] : []),
 		"--system-prompt-file",
 		input.systemPromptFile,
 		// Without this a resumed session keeps its first system prompt, so the prober→teacher switch
@@ -599,7 +599,7 @@ function continueLiveProcess(turn: ClaudeTurn, messages: Message[], signal: Abor
 // would bill turns to the API account.
 const API_CREDENTIAL_ENV_NAMES = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 
-function toClaudeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function toClaudeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const claudeEnv: NodeJS.ProcessEnv = { ...env, MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS) };
 
 	for (const name of API_CREDENTIAL_ENV_NAMES) delete claudeEnv[name];
@@ -632,7 +632,7 @@ async function startProcess(
 		const args = toClaudeArgs({
 			session,
 			model: model.id,
-			effort: toEffort(options?.reasoning),
+			effort: model.reasoning ? toEffort(options?.reasoning) : undefined,
 			systemPromptFile: files.systemPromptFile,
 			mcpConfigFile: files.mcpConfigFile,
 			allowedTools: bridge.allowedTools,

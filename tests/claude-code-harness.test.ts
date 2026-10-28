@@ -7,6 +7,7 @@
  * scenario per spawn, so the spawn count shows whether the answer continued
  * the waiting process or started a fresh one with a replay.
  */
+import "./isolated-auth-file.ts";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
@@ -28,6 +29,12 @@ import { handleChatRequest } from "../src/server/chat-handler.ts";
 import { isTurnRunning } from "../src/server/turn-liveness.ts";
 import { runningTurn } from "../src/server/turn-runs.ts";
 import { chatStore } from "../src/store/chats.ts";
+import { cliDiscoveryOverride, connectCli } from "../src/server/cli-connections.ts";
+
+// Claude Code runs only once connected (owner, 2026-10-28): connect it the way the Keys page
+// would, with the account's models from the discovery seam instead of the real CLI.
+cliDiscoveryOverride.current["claude-code"] = async () => ({ ok: true, account: null, models: [{ id: "sonnet", name: "Sonnet", efforts: ["low", "medium", "high", "xhigh", "max"] }] });
+assert.ok((await connectCli("claude-code")).ok);
 
 const FAKE_CLAUDE = fileURLToPath(new URL("./fixtures/claude-code/fake-claude.mjs", import.meta.url));
 const TEXT_FIXTURE = fileURLToPath(new URL("./fixtures/claude-code/text.jsonl", import.meta.url));

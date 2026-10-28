@@ -1,6 +1,3 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -26,8 +23,6 @@ import { BACKGROUND_MODEL_ROLES } from "../src/core/settings.ts";
 import { resolveSettings } from "../src/core/settings-resolution.ts";
 import { readSettings } from "../src/store/settings.ts";
 import { effectiveSettings } from "../src/server/stores.ts";
-import { providerKeyPresent } from "../src/server/keys.ts";
-import { getClaudeBinary } from "../src/agent/claude-code/binary.ts";
 
 // The model-control wave (2026-09-12): pi-ai owns the registry — these pins
 // hold our projection + validation honest against the shipped catalog, and
@@ -333,77 +328,5 @@ describe("pi thinking truth (pinned against pi-ai upgrades)", () => {
 		assert.throws(() => piEngineFor("prober"), /no configured model for role "prober"/);
 	});
 });
-/** Runs fn with PATH and HOME pointed at a temp dir, so the CLI lookup only
- *  finds a claude binary when installed is true. */
-function withClaudeInstalled(installed: boolean, fn: () => void): void {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-catalog-"));
-	const saved = { PATH: process.env.PATH, HOME: process.env.HOME, npm_config_prefix: process.env.npm_config_prefix };
-
-	if (installed) fs.writeFileSync(path.join(dir, "claude"), "#!/bin/sh\n", { mode: 0o755 });
-	process.env.PATH = dir;
-	process.env.HOME = dir;
-	delete process.env.npm_config_prefix;
-
-	try {
-		fn();
-	} finally {
-		for (const [name, value] of Object.entries(saved)) {
-			if (value === undefined) delete process.env[name];
-			else process.env[name] = value;
-		}
-		fs.rmSync(dir, { recursive: true, force: true });
-	}
-}
-
-describe("the claude-code provider (subscription CLI, no key)", () => {
-	it("modelCatalog() lists claude-code opus/sonnet/haiku when the CLI is installed", () => {
-		withClaudeInstalled(true, () => {
-			const ids = modelCatalog()
-				.models.filter((m) => m.provider === "claude-code")
-				.map((m) => m.id);
-			assert.deepEqual(ids, ["haiku", "opus", "sonnet"]);
-		});
-	});
-
-	it("catalogProviders() marks claude-code present when the CLI is installed", () => {
-		withClaudeInstalled(true, () => {
-			const row = catalogProviders().find((p) => p.id === "claude-code");
-			assert.deepEqual(row, { id: "claude-code", envVar: "", keyPresent: true });
-		});
-	});
-
-	/** The lookup also checks fixed system dirs (e.g. /opt/homebrew/bin) that
-	 *  PATH and HOME can't redirect, so a system-wide claude can't be hidden. */
-	const systemClaude = (() => {
-		let found: string | null = null;
-		withClaudeInstalled(false, () => (found = getClaudeBinary()));
-		return found;
-	})();
-
-	it("catalogProviders() marks claude-code absent and modelCatalog() hides it when the CLI is missing", { skip: systemClaude ? `system-wide claude at ${systemClaude}` : false }, () => {
-		withClaudeInstalled(false, () => {
-			const row = catalogProviders().find((p) => p.id === "claude-code");
-			assert.equal(row?.keyPresent, false);
-			assert.equal(
-				modelCatalog().models.some((m) => m.provider === "claude-code"),
-				false,
-			);
-		});
-	});
-
-	it("catalogContextLimits() has claude-code:opus when the CLI is installed", () => {
-		withClaudeInstalled(true, () => {
-			assert.ok((catalogContextLimits().get("claude-code:opus") ?? 0) > 0);
-		});
-	});
-
-	it('piEngineForSpec({ provider: "claude-code", id: "sonnet" }) resolves', () => {
-		const engine = piEngineForSpec({ provider: "claude-code", id: "sonnet" });
-		assert.equal(engine.model.provider, "claude-code");
-		assert.equal(engine.model.id, "sonnet");
-	});
-
-	it('providerKeyPresent("claude-code") is true', () => {
-		assert.equal(providerKeyPresent("claude-code"), true);
-	});
-});
+// The claude-code and antigravity catalog rows are connection-gated; they're
+// pinned under an isolated connections file in tests/cli-connections.test.ts.

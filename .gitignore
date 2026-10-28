@@ -13,6 +13,8 @@ dist/
 
 # dev auth/keys store (auth-keys wave): repo-root auth.json — secrets never committed
 auth.json
+# dev CLI connections (Claude Code / Antigravity): next to auth.json, per machine
+cli-connections.json
 
 # dev-fresh launcher scratch (fresh-user sim): disposable per launch
 .fresh-data/

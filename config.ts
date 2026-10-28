@@ -143,3 +143,11 @@ export const PROMPTS_OVERRIDE_DIR = path.join(DATA_ROOT, "prompts");
 export const AUTH_FILE = process.env.LH_AUTH_FILE
 	? path.resolve(process.env.LH_AUTH_FILE)
 	: path.join(ROOT, "auth.json");
+
+/**
+ * CLI connections (owner, 2026-10-28): which subscription CLIs (Claude Code,
+ * Antigravity) the user connected on the Keys page, with the account's model
+ * list fetched at Connect / Refresh. Next to auth.json; no secrets — the CLIs
+ * keep their own sign-in.
+ */
+export const CLI_CONNECTIONS_FILE = path.join(path.dirname(AUTH_FILE), "cli-connections.json");

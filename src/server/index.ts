@@ -33,6 +33,9 @@ export { effectivePromptSegments, allSegmentPaths, readPromptOverride } from "..
 // Importing this module runs the idempotent boot fill-gap — every consumer
 // keeps its plain process.env reads (that seam is the point).
 export * from "./keys.ts";
+// CLI connections (owner, 2026-10-28): Claude Code / Antigravity Connect,
+// Refresh and Disconnect behind /api/cli-connections.
+export * from "./cli-connections.ts";
 export * from "./search.ts";
 export { authStore } from "../store/auth.ts";
 export * from "./settings-body.ts";
