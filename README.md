@@ -58,6 +58,8 @@ All three platforms support in-app updates.
 - **Local storage.** Your chats, graph, settings, and API keys live on your machine. Learning records are plain files you can inspect.
 - **External services.** Models run through your configured providers. Model requests send the context needed for the task; web research and dictation also contact external services. Local storage does not mean offline processing.
 - **Claude Code sessions.** With the Claude Code provider, each lesson also runs as a Claude Code CLI session, so the CLI stores that conversation in its own session files under `~/.claude/projects/` (Claude Code deletes old sessions after about 30 days by default).
+- **Antigravity sessions.** With the Antigravity provider, each lesson also runs as a conversation in the Antigravity CLI (`agy`), which stores it under `~/.gemini/antigravity-cli/`, along with copies of the lesson tools' schemas under `~/.gemini/antigravity-cli/mcp/learnharness/`.
+- **Subscription CLIs.** Claude Code and Antigravity use the account you are signed into in their own CLI; LearnHarness stores no credentials for them. Connect each one under Settings → Keys, which fetches the models your account offers (Refresh models picks up new ones).
 - **Inspectable behavior.** System prompts are visible and editable. The app is open source under the AGPL-3.0 license.
 
 ## Development and support
